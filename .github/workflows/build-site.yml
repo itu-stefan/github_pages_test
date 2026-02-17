@@ -1,4 +1,4 @@
-name: Build site artifact
+name: Build Markdown site artifact
 
 on:
   push:
@@ -11,19 +11,43 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.1'
-          bundler-cache: true
+      - name: Install pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
 
-      - name: Build (Jekyll)
-        run: bundle exec jekyll build --destination _site
+      - name: Build HTML into _site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+
+          # Copy everything from docs except .md (assets like css/js/images)
+          rsync -av --exclude '*.md' docs/ _site/ || true
+
+          # Convert each docs/*.md -> _site/*.html (same relative path)
+          shopt -s globstar nullglob
+          for f in docs/**/*.md; do
+            rel="${f#docs/}"
+            out="_site/${rel%.md}.html"
+            mkdir -p "$(dirname "$out")"
+
+            # Convert Markdown to standalone HTML with a basic title
+            title="$(basename "${rel%.md}")"
+            pandoc "$f" \
+              --standalone \
+              --metadata title="$title" \
+              --from gfm \
+              --to html5 \
+              -o "$out"
+          done
+
+          # If you want docs/index.md to become the site root index.html, you're already covered:
+          test -f _site/index.html
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -32,7 +56,3 @@ jobs:
           path: _site
           if-no-files-found: error
           retention-days: 7
-
-
-
-
